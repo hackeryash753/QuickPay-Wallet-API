@@ -1,0 +1,19 @@
+﻿using QuickPay.Models.Domain;
+
+namespace QuickPay.Models.DTO
+{
+    public class TransactionsDto
+    {
+        public int Id { get; set; }
+        public int SenderWalletId { get; set; }
+        public int ReceiverWalletId { get; set; }
+        public decimal Amount { get; set; }
+
+        public string Type { get; set; }
+
+        public string Status { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public Wallet SenderWallet { get; set; }
+        public Wallet ReceiverWallet { get; set; }
+    }
+}
