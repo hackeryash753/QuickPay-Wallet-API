@@ -13,6 +13,8 @@
 
         public int ReceiverWalletId { get; set; }
 
+        public string Direction { get; set; }
+
 
     }
 }

@@ -40,7 +40,12 @@ namespace QuickPay.Services
                     Status = t.Status,
                     CreatedAt = t.CreatedAt,
                     ReceiverWalletId = t.ReceiverWalletId,
-                    SenderWalletId = t.SenderWalletId
+                    SenderWalletId = t.SenderWalletId,
+                    Direction = t.SenderWalletId == wallet.Id
+                               ? "DEBIT"
+                               : "CREDIT"
+
+
                 })
                 .ToListAsync();
 

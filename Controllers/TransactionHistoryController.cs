@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using QuickPay.Data;
 using QuickPay.Models.DTO;
 using QuickPay.Services.Interface;
+using System.Security.Claims;
 
 namespace QuickPay.Controllers
 {
@@ -15,9 +16,10 @@ namespace QuickPay.Controllers
            this.transactionService = transactionService;
         }
 
-        [HttpGet("History/{userId},{pageNumber},{pageSize}")]
-        public async Task<IActionResult> GetTransactionHistory(int userId,int pageNumber = 1,int pageSize = 10)
+        [HttpGet("History/{pageNumber},{pageSize}")]
+        public async Task<IActionResult> GetTransactionHistory(int pageNumber = 1,int pageSize = 10)
         {
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var Transactions = await transactionService.TransactionHistoryAsync(userId, pageNumber,pageSize);
             return Ok(new ApiResponeDto<List<TransactionHistoryDto>>
             {

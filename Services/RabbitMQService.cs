@@ -18,7 +18,7 @@ namespace QuickPay.Services
 
             await channel.QueueDeclareAsync(
                 queue: "transactionQueue",
-                durable: false,
+                durable: true,
                 exclusive: false,
                 autoDelete: false,
                 arguments: null);

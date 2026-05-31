@@ -9,6 +9,7 @@ using QuickPay.Services.Interface;
 using System.Security.Claims;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class WalletController : ControllerBase
 {
@@ -20,13 +21,19 @@ public class WalletController : ControllerBase
     }
 
     [HttpGet("userid")]   // 👈 clean endpoint
-    public async Task<IActionResult> GetWallet(int userid)
+    public async Task<IActionResult> GetWallet()
     {
-        var result = await walletService.GetBalanceAsync(userid);
+        
+
+        var userId = int.Parse(
+        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
+
+        var result = await walletService.GetBalanceAsync(userId);
+
         return Ok(new ApiResponeDto<WalletResponeDto>
         {
             Success = true,
-            Message = "Transaction history retrieved successfully",
+            Message = "Wallet retrieved successfully",
             Data = result
         });
 

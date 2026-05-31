@@ -18,7 +18,9 @@ namespace QuickPay.Services
         protected override async Task ExecuteAsync(
             CancellationToken stoppingToken)
         {
-            var factory = new ConnectionFactory()
+            Console.WriteLine("CONSUMER STARTED");
+
+            var factory = new ConnectionFactory
             {
                 HostName = "localhost"
             };
@@ -29,9 +31,18 @@ namespace QuickPay.Services
             var channel =
                 await connection.CreateChannelAsync();
 
+            // Main Queue
             await channel.QueueDeclareAsync(
                 queue: "transactionQueue",
-                durable: false,
+                durable: true,
+                exclusive: false,
+                autoDelete: false,
+                arguments: null);
+
+            // Dead Letter Queue
+            await channel.QueueDeclareAsync(
+                queue: "transactionQueue-dlq",
+                durable: true,
                 exclusive: false,
                 autoDelete: false,
                 arguments: null);
@@ -48,7 +59,11 @@ namespace QuickPay.Services
                     var message =
                         Encoding.UTF8.GetString(body);
 
-                    using var scope = scopeFactory.CreateScope();
+                    Console.WriteLine(
+                        $"Message Received: {message}");
+
+                    using var scope =
+                        scopeFactory.CreateScope();
 
                     var dbContext =
                         scope.ServiceProvider
@@ -65,17 +80,20 @@ namespace QuickPay.Services
 
                     await dbContext.SaveChangesAsync();
 
-                    
+                    Console.WriteLine(
+                        "Notification saved successfully");
+
                     await channel.BasicAckAsync(
                         deliveryTag: ea.DeliveryTag,
-                        multiple: false
-                        );
+                        multiple: false);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex.Message);
+                    Console.WriteLine(
+                        $"Consumer Error: {ex.Message}");
 
-                    var failedBody = ea.Body.ToArray();
+                    var failedBody =
+                        ea.Body.ToArray();
 
                     await channel.BasicPublishAsync(
                         exchange: "",
@@ -88,6 +106,17 @@ namespace QuickPay.Services
                 }
             };
 
+            await channel.BasicConsumeAsync(
+                queue: "transactionQueue",
+                autoAck: false,
+                consumer: consumer);
+
+            Console.WriteLine(
+                "Consumer Registered Successfully");
+
+            await Task.Delay(
+                Timeout.Infinite,
+                stoppingToken);
         }
     }
 }

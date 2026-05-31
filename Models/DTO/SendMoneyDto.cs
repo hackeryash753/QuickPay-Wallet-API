@@ -4,8 +4,7 @@ namespace QuickPay.Models.DTO
 {
     public class SendMoneyDto
     {
-        [Required]
-        public int SenderId { get; set; }
+
         //public int ReceiverId { get; set; }
 
         [EmailAddress]

@@ -28,9 +28,9 @@ namespace QuickPay
 
             builder.Services.AddSwaggerGen(options =>
            {
-               options.SwaggerDoc("V1", new OpenApiInfo
+               options.SwaggerDoc("v1", new OpenApiInfo
                {
-                   Version = "V1",
+                   Version = "v1",
                    Title = "QuickPay API",
                    Description = "API for QuickPay Wallet Application"
                });
@@ -98,11 +98,10 @@ namespace QuickPay
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
-            if (app.Environment.IsDevelopment())
-            {
+
                 app.UseSwagger();
                 app.UseSwaggerUI();
-            }
+
 
             app.UseHttpsRedirection();
             app.UseAuthentication();

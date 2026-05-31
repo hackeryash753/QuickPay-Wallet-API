@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using QuickPay.Data;
 using QuickPay.Models.DTO;
 using QuickPay.Services.Interface;
+using System.Security.Claims;
 
 namespace QuickPay.Controllers
 {
@@ -22,7 +23,8 @@ namespace QuickPay.Controllers
 
         public async Task<IActionResult> SendMoney(SendMoneyDto sendMoneyDto)
         {
-           var result = await walletService.SendMoneyAsync(sendMoneyDto);
+            var senderId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var result = await walletService.SendMoneyAsync(sendMoneyDto, senderId);
 
             return Ok(new ApiResponeDto<SendMoneyResponseDto>
             {

@@ -15,39 +15,40 @@ namespace QuickPay.Services
         public readonly QuickPayDbContext dbContext;
         public readonly RabbitMQService rabbitMQService;
         public readonly IDistributedCache cache;
-        public WalletService(QuickPayDbContext dbContext, RabbitMQService rabbitMQService, IDistributedCache cache)
+        public WalletService(QuickPayDbContext dbContext , RabbitMQService rabbitMQService, IDistributedCache cache)
         {
             this.dbContext = dbContext;
             this.rabbitMQService = rabbitMQService;
             this.cache = cache;   
         }
 
-        public async Task<SendMoneyResponseDto> SendMoneyAsync(SendMoneyDto dto)
+        public async Task<SendMoneyResponseDto> SendMoneyAsync(
+    SendMoneyDto dto,
+    int senderId)
         {
             using var transaction =
                 await dbContext.Database.BeginTransactionAsync();
+            if (dto.Amount <= 0)
+                throw new ValidationException("Invalid amount");
+
+            var senderWallet = await dbContext.Wallets
+                .FirstOrDefaultAsync(w => w.UserId == senderId);
+
+            var receiverUser = await dbContext.Users
+                .FirstOrDefaultAsync(u =>
+                    u.Email.ToLower() == dto.ReceiverEmail.ToLower());
+
+            if (receiverUser == null)
+                throw new NotFoundException("Receiver not found");
+
+            var receiverWallet = await dbContext.Wallets
+                .FirstOrDefaultAsync(w => w.UserId == receiverUser.Id);
+
+            if (senderWallet.Balance < dto.Amount)
+                throw new ValidationException("Insufficient balance");
 
             try
             {
-                if (dto.Amount <= 0)
-                    throw new ValidationException("Invalid amount");
-
-                var senderWallet = await dbContext.Wallets
-                    .FirstOrDefaultAsync(w => w.UserId == dto.SenderId);
-
-                var receiverUser = await dbContext.Users
-                    .FirstOrDefaultAsync(u =>
-                        u.Email.ToLower() == dto.ReceiverEmail.ToLower());
-
-                if (receiverUser == null)
-                    throw new NotFoundException("Receiver not found");
-
-                var receiverWallet = await dbContext.Wallets
-                    .FirstOrDefaultAsync(w => w.UserId == receiverUser.Id);
-
-                if (senderWallet.Balance < dto.Amount)
-                    throw new ValidationException("Insufficient balance");
-
                 senderWallet.Balance -= dto.Amount;
                 receiverWallet.Balance += dto.Amount;
 
@@ -62,26 +63,8 @@ namespace QuickPay.Services
                 });
 
                 await dbContext.SaveChangesAsync();
+
                 await transaction.CommitAsync();
-                await rabbitMQService.PublishMessage(
-                      $"Transaction Success: {dto.Amount} sent");
-
-                await cache.RemoveAsync(
-                    $"wallet:balance:{senderWallet.Id}");
-
-                await cache.RemoveAsync(
-                    $"wallet:balance:{receiverWallet.Id}");
-
-                return new SendMoneyResponseDto
-                {
-                    SenderWalletId = senderWallet.Id,
-                    ReceiverWalletId = receiverWallet.Id,
-                    Amount = dto.Amount,
-                    Type = "TRANSFER",
-                    Status = "SUCCESS",
-                    CreatedAt = DateTime.UtcNow
-                };
-
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -95,13 +78,31 @@ namespace QuickPay.Services
                 await transaction.RollbackAsync();
                 throw;
             }
-           
 
+            // AFTER COMMIT
+            Console.WriteLine("Before RabbitMQ Publish");
+            await rabbitMQService.PublishMessage(
+                $"Transaction Success: {dto.Amount} sent");
+            Console.WriteLine("After RabbitMQ Publish");
 
+            await cache.RemoveAsync(
+                $"wallet:balance:{senderWallet.Id}");
 
+            await cache.RemoveAsync(
+                $"wallet:balance:{receiverWallet.Id}");
+
+            return new SendMoneyResponseDto
+            {
+                SenderWalletId = senderWallet.Id,
+                ReceiverWalletId = receiverWallet.Id,
+                Amount = dto.Amount,
+                Type = "TRANSFER",
+                Status = "SUCCESS",
+                CreatedAt = DateTime.UtcNow
+            };
         }
 
-        public async Task<AddMoneyResponeDto> AddMoneyAsync(AddMoneyDto addMoneyDto)
+        public async Task<AddMoneyResponeDto> AddMoneyAsync(AddMoneyDto addMoneyDto, int userId)
         {
             await using var transaction =
                 await dbContext.Database.BeginTransactionAsync();
@@ -113,7 +114,7 @@ namespace QuickPay.Services
 
             var wallet = await dbContext.Wallets
                 .FirstOrDefaultAsync(
-                    u => u.UserId == addMoneyDto.userid);
+                    u => u.UserId == userId);
 
             if (wallet == null)
             {
@@ -125,8 +126,8 @@ namespace QuickPay.Services
 
             dbContext.Transactions.Add(new Transactions
             {
-                SenderWalletId = addMoneyDto.userid,
-                ReceiverWalletId = addMoneyDto.userid,
+                SenderWalletId = userId,
+                ReceiverWalletId = userId,
                 Amount = addMoneyDto.amount,
                 Type = "Credit",
                 Status = "Success",
@@ -154,7 +155,7 @@ namespace QuickPay.Services
             }
 
             await cache.RemoveAsync(
-                $"wallet:balance:{addMoneyDto.userid}");
+                $"wallet:balance:{userId}");
 
             return new AddMoneyResponeDto
             {
