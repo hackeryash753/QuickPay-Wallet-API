@@ -81,8 +81,23 @@ namespace QuickPay.Services
 
             // AFTER COMMIT
             Console.WriteLine("Before RabbitMQ Publish");
-            await rabbitMQService.PublishMessage(
-                $"Transaction Success: {dto.Amount} sent");
+
+            var senderNotification = new NotificationMessageDto
+            {
+                UserId = senderId,
+                Message = $"You sent ₹{dto.Amount} to {dto.ReceiverEmail}"
+            };
+            await rabbitMQService.PublishMessage(senderNotification);
+
+            var receiverNotification = new NotificationMessageDto
+            {
+                UserId = receiverUser.Id,
+                Message = $"You received ₹{dto.Amount}"
+            };
+
+            await rabbitMQService.PublishMessage(receiverNotification);
+
+
             Console.WriteLine("After RabbitMQ Publish");
 
             await cache.RemoveAsync(
@@ -129,7 +144,7 @@ namespace QuickPay.Services
                 SenderWalletId = userId,
                 ReceiverWalletId = userId,
                 Amount = addMoneyDto.amount,
-                Type = "Credit",
+                Type = "ADD_MONEY",
                 Status = "Success",
                 CreatedAt = DateTime.UtcNow
             });

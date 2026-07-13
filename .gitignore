@@ -13,6 +13,7 @@ obj/
 
 # Logs
 *.log
+.env
 
 # OS files
 .DS_Store

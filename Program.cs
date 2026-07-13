@@ -57,17 +57,19 @@ namespace QuickPay
                         }
                    });
            });
+           
             builder.Services.AddDbContext<QuickPayDbContext>(options =>
             options.UseSqlServer(
                 builder.Configuration.GetConnectionString("QuickPayConnectionString")));
             builder.Services.AddScoped<AuthService>();
             builder.Services.AddScoped<IWalletService, WalletService>();
             builder.Services.AddScoped<ITransactionService, TransactionService>();
+            builder.Services.AddScoped<INotificationService, NotificationService>();
             builder.Services.AddScoped<RabbitMQService>();
             builder.Services.AddHostedService<ConsumerService>();
             builder.Services.AddStackExchangeRedisCache(options =>
             {
-                options.Configuration = "localhost:6379";
+                options.Configuration = "redis:6379";
             });
 
             builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -97,9 +99,16 @@ namespace QuickPay
             
             var app = builder.Build();
 
+            using (var scope = app.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<QuickPayDbContext>();
+
+                db.Database.Migrate();
+            }
+
             // Configure the HTTP request pipeline.
 
-                app.UseSwagger();
+            app.UseSwagger();
                 app.UseSwaggerUI();
 
 

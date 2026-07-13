@@ -1,18 +1,25 @@
-﻿using QuickPay.Data;
+﻿using Microsoft.Extensions.Configuration;
+using QuickPay.Data;
 using QuickPay.Models.Domain;
+using QuickPay.Models.DTO;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System.Text;
+using System.Text.Json;
 
 namespace QuickPay.Services
 {
     public class ConsumerService : BackgroundService
     {
         private readonly IServiceScopeFactory scopeFactory;
+        private readonly IConfiguration configuration;
 
-        public ConsumerService(IServiceScopeFactory scopeFactory)
+        public ConsumerService(
+            IServiceScopeFactory scopeFactory,
+            IConfiguration configuration)
         {
             this.scopeFactory = scopeFactory;
+            this.configuration = configuration;
         }
 
         protected override async Task ExecuteAsync(
@@ -20,18 +27,53 @@ namespace QuickPay.Services
         {
             Console.WriteLine("CONSUMER STARTED");
 
+            var rabbitHost =
+                configuration["RabbitMQ:HostName"] ?? "rabbitmq";
+
             var factory = new ConnectionFactory
             {
-                HostName = "localhost"
+                HostName = rabbitHost
             };
 
-            var connection =
-                await factory.CreateConnectionAsync();
+            IConnection? connection = null;
 
-            var channel =
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    connection =
+                        await factory.CreateConnectionAsync();
+
+                    Console.WriteLine(
+                        $"Connected to RabbitMQ ({rabbitHost})");
+
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(
+                        $"RabbitMQ not ready: {ex.Message}");
+
+                    Console.WriteLine(
+                        "Retrying in 5 seconds...");
+
+                    await Task.Delay(
+                        TimeSpan.FromSeconds(5),
+                        stoppingToken);
+                }
+            }
+
+            if (connection == null)
+            {
+                Console.WriteLine(
+                    "Unable to connect to RabbitMQ");
+
+                return;
+            }
+
+            await using var channel =
                 await connection.CreateChannelAsync();
 
-            // Main Queue
             await channel.QueueDeclareAsync(
                 queue: "transactionQueue",
                 durable: true,
@@ -39,7 +81,6 @@ namespace QuickPay.Services
                 autoDelete: false,
                 arguments: null);
 
-            // Dead Letter Queue
             await channel.QueueDeclareAsync(
                 queue: "transactionQueue-dlq",
                 durable: true,
@@ -56,11 +97,20 @@ namespace QuickPay.Services
                 {
                     var body = ea.Body.ToArray();
 
-                    var message =
+                    var json =
                         Encoding.UTF8.GetString(body);
 
                     Console.WriteLine(
-                        $"Message Received: {message}");
+                        $"Message Received: {json}");
+
+                    var notificationMessage =
+                        JsonSerializer.Deserialize<NotificationMessageDto>(json);
+
+                    if (notificationMessage == null)
+                    {
+                        throw new Exception(
+                            "Failed to deserialize notification message");
+                    }
 
                     using var scope =
                         scopeFactory.CreateScope();
@@ -69,19 +119,21 @@ namespace QuickPay.Services
                         scope.ServiceProvider
                         .GetRequiredService<QuickPayDbContext>();
 
-                    var notification = new Notification
-                    {
-                        Message = message,
-                        CreatedAt = DateTime.UtcNow,
-                        IsRead = false
-                    };
+                    var notification =
+                        new Notification
+                        {
+                            Message = notificationMessage.Message,
+                            UserId = notificationMessage.UserId,
+                            CreatedAt = DateTime.UtcNow,
+                            IsRead = false
+                        };
 
                     dbContext.Notifications.Add(notification);
 
                     await dbContext.SaveChangesAsync();
 
                     Console.WriteLine(
-                        "Notification saved successfully");
+                        $"Notification saved for UserId: {notification.UserId}");
 
                     await channel.BasicAckAsync(
                         deliveryTag: ea.DeliveryTag,
@@ -90,15 +142,12 @@ namespace QuickPay.Services
                 catch (Exception ex)
                 {
                     Console.WriteLine(
-                        $"Consumer Error: {ex.Message}");
-
-                    var failedBody =
-                        ea.Body.ToArray();
+                        $"Consumer Error: {ex}");
 
                     await channel.BasicPublishAsync(
                         exchange: "",
                         routingKey: "transactionQueue-dlq",
-                        body: failedBody);
+                        body: ea.Body);
 
                     await channel.BasicAckAsync(
                         deliveryTag: ea.DeliveryTag,
@@ -114,9 +163,17 @@ namespace QuickPay.Services
             Console.WriteLine(
                 "Consumer Registered Successfully");
 
-            await Task.Delay(
-                Timeout.Infinite,
-                stoppingToken);
+            try
+            {
+                await Task.Delay(
+                    Timeout.Infinite,
+                    stoppingToken);
+            }
+            catch (TaskCanceledException)
+            {
+                Console.WriteLine(
+                    "Consumer service shutting down...");
+            }
         }
     }
 }

@@ -1,20 +1,34 @@
-﻿using RabbitMQ.Client;
+﻿using Microsoft.Extensions.Configuration;
+using RabbitMQ.Client;
 using System.Text;
+using System.Text.Json;
 
 namespace QuickPay.Services
 {
     public class RabbitMQService
     {
-        public async Task PublishMessage(string message)
+        private readonly IConfiguration configuration;
+
+        public RabbitMQService(IConfiguration configuration)
         {
-            var factory = new ConnectionFactory()
+            this.configuration = configuration;
+        }
+
+        public async Task PublishMessage<T>(T messageObject)
+        {
+            var rabbitHost =
+                configuration["RabbitMQ:HostName"];
+
+            var factory = new ConnectionFactory
             {
-                HostName = "localhost"
+                HostName = rabbitHost
             };
 
-            using var connection = await factory.CreateConnectionAsync();
+            await using var connection =
+                await factory.CreateConnectionAsync();
 
-            using var channel = await connection.CreateChannelAsync();
+            await using var channel =
+                await connection.CreateChannelAsync();
 
             await channel.QueueDeclareAsync(
                 queue: "transactionQueue",
@@ -23,12 +37,19 @@ namespace QuickPay.Services
                 autoDelete: false,
                 arguments: null);
 
-            var body = Encoding.UTF8.GetBytes(message);
+            var message =
+                JsonSerializer.Serialize(messageObject);
+
+            var body =
+                Encoding.UTF8.GetBytes(message);
 
             await channel.BasicPublishAsync(
                 exchange: "",
                 routingKey: "transactionQueue",
                 body: body);
+
+            Console.WriteLine(
+                $"Message Published: {message}");
         }
     }
 }
